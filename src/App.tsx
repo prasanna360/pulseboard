@@ -44,7 +44,7 @@ export default function App() {
           <span className="brand-mark" />
           <div>
             <h1>PulseBoard</h1>
-            <p>Live telemetry for Line 4 · Plant Floor B</p>
+            <p>Live telemetry from Line 4, Plant Floor B</p>
           </div>
         </div>
       </header>
