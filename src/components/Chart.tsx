@@ -103,8 +103,19 @@ export default function Chart({ buffers, sensors, visibleIds, tick, live, onLive
     const span = Math.max(end - start, 1);
 
     ctx.clearRect(0, 0, width, height);
-    ctx.fillStyle = '#F4F6F6';
+    ctx.fillStyle = '#151E22';
     ctx.fillRect(0, 0, width, height);
+
+    // fine vertical grid, like graph paper — helps read time position at a glance
+    ctx.strokeStyle = 'rgba(255,255,255,0.035)';
+    ctx.lineWidth = 1;
+    const gridStep = width / 24;
+    for (let gx = 0; gx <= width; gx += gridStep) {
+      ctx.beginPath();
+      ctx.moveTo(Math.round(gx) + 0.5, 0);
+      ctx.lineTo(Math.round(gx) + 0.5, height);
+      ctx.stroke();
+    }
 
     const n = Math.max(visibleSensors.length, 1);
     const bandHeight = height / n;
@@ -138,7 +149,7 @@ export default function Chart({ buffers, sensors, visibleIds, tick, live, onLive
 
       // band separator
       if (i > 0) {
-        ctx.strokeStyle = '#C7CDCC';
+        ctx.strokeStyle = '#2C3A3E';
         ctx.lineWidth = 1;
         ctx.beginPath();
         ctx.moveTo(0, bandTop);
@@ -149,7 +160,7 @@ export default function Chart({ buffers, sensors, visibleIds, tick, live, onLive
       // warn threshold line
       if (sensor.warnThreshold >= min && sensor.warnThreshold <= max) {
         const y = plotTop + plotHeight * (1 - (sensor.warnThreshold - min) / yRange);
-        ctx.strokeStyle = 'rgba(226,150,43,0.55)';
+        ctx.strokeStyle = 'rgba(242,168,61,0.45)';
         ctx.setLineDash([4, 4]);
         ctx.lineWidth = 1;
         ctx.beginPath();
@@ -159,10 +170,14 @@ export default function Chart({ buffers, sensors, visibleIds, tick, live, onLive
         ctx.setLineDash([]);
       }
 
-      // series line
+      // series line — soft phosphor-style glow, like a scope trace
       if (points.length > 1) {
+        ctx.save();
+        ctx.shadowColor = sensor.color;
+        ctx.shadowBlur = 6;
         ctx.strokeStyle = sensor.color;
-        ctx.lineWidth = 1.5;
+        ctx.lineWidth = 1.6;
+        ctx.lineJoin = 'round';
         ctx.beginPath();
         points.forEach((p, idx) => {
           const x = ((p.t - start) / span) * width;
@@ -171,10 +186,11 @@ export default function Chart({ buffers, sensors, visibleIds, tick, live, onLive
           else ctx.lineTo(x, y);
         });
         ctx.stroke();
+        ctx.restore();
       }
 
       // label + live value
-      ctx.fillStyle = '#16333F';
+      ctx.fillStyle = '#EAF0EF';
       ctx.font = '600 11px "IBM Plex Sans", sans-serif';
       ctx.textAlign = 'left';
       ctx.fillText(sensor.label, 10, bandTop + 14);
@@ -182,7 +198,7 @@ export default function Chart({ buffers, sensors, visibleIds, tick, live, onLive
       const latest = points[points.length - 1];
       if (latest) {
         const isWarn = latest.v >= sensor.warnThreshold;
-        ctx.fillStyle = isWarn ? '#E2962B' : '#16333F';
+        ctx.fillStyle = isWarn ? '#F2A83D' : '#EAF0EF';
         ctx.font = '500 11px "IBM Plex Mono", monospace';
         ctx.textAlign = 'right';
         ctx.fillText(`${latest.v.toFixed(2)} ${sensor.unit}`, width - 10, bandTop + 14);
@@ -191,7 +207,7 @@ export default function Chart({ buffers, sensors, visibleIds, tick, live, onLive
     });
 
     // x-axis time labels
-    ctx.fillStyle = '#6B7677';
+    ctx.fillStyle = '#7F9498';
     ctx.font = '400 10px "IBM Plex Mono", monospace';
     const numTicks = width > 500 ? 6 : 3;
     for (let i = 0; i <= numTicks; i++) {
@@ -279,7 +295,7 @@ export default function Chart({ buffers, sensors, visibleIds, tick, live, onLive
       <header className="panel-header">
         <div className="panel-header-left">
           <h2>Live Trace</h2>
-          <span className="hint">drag to pan · scroll to zoom · double-click to reset</span>
+          <span className="hint">drag to pan, scroll to zoom, double-click to reset</span>
         </div>
         <div className="panel-header-right">
           <span className="metric-inline">
