@@ -1,32 +1,72 @@
 # PulseBoard
 
-A performance-critical, real-time telemetry dashboard. Built for the Flam Frontend R&D
-assignment.
+A real-time industrial telemetry dashboard, built to stay smooth under heavy, continuous
+data — hundreds of thousands of points streaming and rendering live, with no backend
+required.
 
-Simulates four live industrial sensors (furnace temperature, spindle vibration, line
-pressure, coolant temperature) streaming into the browser, and renders them in a canvas
-chart that stays smooth even as the underlying buffer grows into the hundreds of
-thousands of points.
+---
 
-## What it demonstrates
+## What it does
 
-- **Typed-array ring buffers** (`src/utils/ringBuffer.ts`) — each sensor writes into a
-  fixed-capacity `Float64Array` buffer instead of a growing/shrinking JS array, so
-  ingest is O(1) with zero GC churn from array reallocation.
-- **LTTB downsampling in a Web Worker** (`src/utils/lttb.ts`,
-  `src/workers/downsample.worker.ts`) — Largest-Triangle-Three-Buckets reduces
-  hundreds of thousands of raw points down to ~1,400 points for rendering while
-  preserving the visual shape (spikes and slope changes survive). It runs off the
-  main thread so panning/zooming never stalls on computation.
-- **Independent canvas render loop** (`src/components/Chart.tsx`) — drawing runs on
-  its own `requestAnimationFrame` loop reading from a ref, decoupled from React's
-  render cycle and from when worker results arrive. FPS and per-frame render time are
-  measured and shown live.
-- **Virtualized data table** (`src/components/DataTable.tsx`) — uses `react-window`
-  so only the ~15 visible rows are ever mounted in the DOM, no matter how many
-  thousand rows are in the underlying dataset.
-- **Pan & zoom** — drag to pan, scroll to zoom (zooms toward the cursor position),
-  double-click to jump back to the live edge.
+PulseBoard watches four simulated sensors on a factory line — furnace temperature,
+spindle vibration, line pressure, and coolant temperature — and streams live readings
+into the browser. You can:
+
+- Watch all four traces update live, each with its own color and warning threshold
+- Drag to pan and scroll to zoom on the chart, at any point in the stream's history
+- Pause and resume ingest, or change how fast data arrives
+- Toggle sensors on or off
+- Scroll through raw readings in a searchable table, filtered by sensor
+
+The interesting part isn't the sensors — it's what it takes to keep a chart like this
+responsive when the underlying dataset never stops growing.
+
+## The performance problem, and how it's solved
+
+Naive real-time charts fall over in three predictable places: the data structure holding
+the stream, the work of turning raw points into pixels, and the DOM if you're also
+rendering a table of readings. PulseBoard addresses each directly.
+
+**Ingest doesn't allocate.** Each sensor writes into a fixed-capacity `Float64Array` ring
+buffer (`src/utils/ringBuffer.ts`) instead of a growing/shrinking JS array. Writes are
+O(1) and memory is allocated once up front, so a fast stream never triggers GC pauses
+from constant array resizing.
+
+**Downsampling runs off the main thread.** Rendering 100,000+ raw points every frame is
+wasteful — most of them round to the same pixel anyway. PulseBoard implements
+Largest-Triangle-Three-Buckets (`src/utils/lttb.ts`), an algorithm that picks the points
+that most affect the visual shape of the line — peaks, spikes, slope changes — and drops
+the redundant, near-collinear ones. It reduces any range down to ~1,400 points before
+drawing. This runs inside a Web Worker (`src/workers/downsample.worker.ts`), so panning
+and zooming never wait on computation happening on the same thread as your interaction.
+
+**The chart draws itself, independently of React.** Instead of re-rendering on every
+data tick, the canvas runs its own `requestAnimationFrame` loop
+(`src/components/Chart.tsx`) that reads the latest downsampled points from a ref. React
+state updates happen at a much lower frequency than the draw loop, so the two never
+fight each other for the frame budget. FPS and per-frame render time are measured and
+shown live in the chart header, so the performance claim isn't just asserted — you can
+watch it.
+
+**The table never mounts more than it shows.** The raw-readings table
+(`src/components/DataTable.tsx`) uses `react-window` to virtualize rows — with
+thousands of readings in memory, only the dozen or so actually visible in the viewport
+exist in the DOM at once.
+
+## Stack
+
+React 18, TypeScript, Vite. No UI framework, no charting library — the chart is
+hand-rolled Canvas 2D, which is what makes the render-loop and glow-trace behavior
+possible to control precisely.
+
+## Project structure
+
+    src/
+      components/     Chart, DataTable, Controls, MetricsPanel — all presentational
+      hooks/          useTelemetryStream (ingest), useDownsampleWorker (worker wrapper)
+      utils/          ringBuffer, lttb, dataGenerator — the actual engineering
+      workers/        downsample.worker — LTTB off the main thread
+
 
 ## Run locally
 
@@ -44,33 +84,23 @@ npm run build
 npm run preview   # sanity-check the production build locally
 ```
 
-Output is a static `dist/` folder — no backend required.
+Output is a static `dist/` folder — deployable anywhere that serves static files.
 
-## Deploying (for assignment submission)
+## Deploying
 
-The app is 100% static, so any static host works. Vercel is the fastest path:
+1. Push this project to a GitHub repo.
+2. Go to [vercel.com/new](https://vercel.com/new) and import the repo. Vercel
+   auto-detects the Vite preset (build command `npm run build`, output `dist`).
+   Click **Deploy**.
 
-1. Push this project to a new GitHub repo (see below).
-2. Go to [vercel.com/new](https://vercel.com/new), import the repo.
-3. Framework preset: **Vite**. Build command `npm run build`, output directory `dist`
-   (Vercel usually auto-detects both). Click **Deploy**.
-4. Copy the deployed URL — that's your submission link.
+Netlify works the same way: **New site from Git**, build command `npm run build`,
+publish directory `dist`.
 
-Netlify works the same way (`New site from Git`, build command `npm run build`,
-publish directory `dist`).
+## Notes on the simulated data
 
-## Pushing to GitHub
-
-From inside this project folder:
-
-```bash
-git init
-git add .
-git commit -m "PulseBoard: real-time telemetry dashboard"
-git branch -M main
-git remote add origin https://github.com/<your-username>/<repo-name>.git
-git push -u origin main
-```
-
-Then submit both the GitHub repo URL and the deployed URL as requested in the
-assignment brief.
+Sensor readings are generated client-side (`src/utils/dataGenerator.ts`) from a slow
+sine drift plus jitter and occasional spikes, so the chart has realistic texture at any
+zoom level without needing a live data source. Swapping in a real feed means replacing
+the interval in `useTelemetryStream` with a WebSocket or SSE subscription that calls
+the same `buffer.push(t, v)` — everything downstream (downsampling, rendering,
+virtualization) is agnostic to where the numbers come from.
