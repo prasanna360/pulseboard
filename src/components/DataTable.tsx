@@ -71,7 +71,7 @@ export default function DataTable({ buffers, sensors, visibleIds, tick }: DataTa
       <header className="panel-header">
         <div className="panel-header-left">
           <h2>Raw Readings</h2>
-          <span className="hint">newest first · virtualized, only visible rows are in the DOM</span>
+          <span className="hint">newest first, virtualized so only visible rows touch the DOM</span>
         </div>
         <div className="panel-header-right">
           <input
